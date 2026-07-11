@@ -1,0 +1,44 @@
+name: Validar pool de proxies (runner efimero)
+
+# Corre el ciclo de fetch + validacion (incluye el detector de maliciosos y
+# el reporte a AbuseIPDB) en una maquina efimera de GitHub, no en la red de
+# casa. Cada corrida usa una IP de salida distinta, propiedad de GitHub, asi
+# que ningun proxy malicioso que probemos puede loguear ni rastrear la IP
+# real del dueño de este repo. El runner termina solo al final; no queda
+# nada corriendo entre corridas.
+#
+# Requiere estos secrets en Settings > Secrets and variables > Actions:
+#   DB_CONN            (obligatorio) URI de un Redis gratis externo, ej.
+#                       Upstash: rediss://default:TOKEN@host.upstash.io:PORT/0
+#   ABUSEIPDB_API_KEY   (opcional) misma key que usas localmente, para que
+#                       el reporte automatico de maliciosos siga funcionando
+#                       tambien desde acá.
+
+on:
+  schedule:
+    # cada 6 horas. Ajustable: en un repo privado, GitHub da 2000 min/mes
+    # gratis - una corrida ronda 10-15 min, asi que 4/dia se mantiene comodo
+    # bajo ese limite. Si el repo es publico, Actions es ilimitado y se
+    # puede correr mas seguido.
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Fetch + validar (un solo ciclo, termina solo)
+        env:
+          DB_CONN: ${{ secrets.DB_CONN }}
+          ABUSEIPDB_API_KEY: ${{ secrets.ABUSEIPDB_API_KEY }}
+        run: python proxyPool.py once
