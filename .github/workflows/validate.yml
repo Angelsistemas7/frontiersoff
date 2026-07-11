@@ -16,18 +16,17 @@ name: Validar pool de proxies (runner efimero)
 
 on:
   schedule:
-    # repo publico = minutos de Actions ilimitados y gratis, asi que se
-    # puede correr seguido sin preocuparse por el limite de 2000 min/mes
-    # que aplicaria en un repo privado. Cada 15 min, la mas frecuente que
-    # GitHub permite en cron de Actions (no admite menos de "*/5" y con
-    # menos de 15 el retraso real de arranque del runner se nota mucho).
-    - cron: "*/15 * * * *"
+    # repo publico = minutos de Actions ilimitados y gratis. Cada 30 min:
+    # un ciclo completo (18 fuentes, algunas lentas con reintentos) tarda
+    # 25-30 min en la practica, asi que menos que esto haria que corridas
+    # se pisen entre si sin necesidad.
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -37,11 +36,6 @@ jobs:
 
       - name: Instalar dependencias
         run: pip install -r requirements.txt
-
-      - name: DEBUG temporal - probar conexion directa a Redis
-        env:
-          DB_CONN: ${{ secrets.DB_CONN }}
-        run: python debug_conn.py
 
       - name: Fetch + validar (un solo ciclo, termina solo)
         env:
