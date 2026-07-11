@@ -16,11 +16,12 @@ name: Validar pool de proxies (runner efimero)
 
 on:
   schedule:
-    # cada 6 horas. Ajustable: en un repo privado, GitHub da 2000 min/mes
-    # gratis - una corrida ronda 10-15 min, asi que 4/dia se mantiene comodo
-    # bajo ese limite. Si el repo es publico, Actions es ilimitado y se
-    # puede correr mas seguido.
-    - cron: "0 */6 * * *"
+    # repo publico = minutos de Actions ilimitados y gratis, asi que se
+    # puede correr seguido sin preocuparse por el limite de 2000 min/mes
+    # que aplicaria en un repo privado. Cada 15 min, la mas frecuente que
+    # GitHub permite en cron de Actions (no admite menos de "*/5" y con
+    # menos de 15 el retraso real de arranque del runner se nota mucho).
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:
