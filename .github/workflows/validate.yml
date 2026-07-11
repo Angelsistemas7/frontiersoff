@@ -38,6 +38,11 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      - name: DEBUG temporal - probar conexion directa a Redis
+        env:
+          DB_CONN: ${{ secrets.DB_CONN }}
+        run: python debug_conn.py
+
       - name: Fetch + validar (un solo ciclo, termina solo)
         env:
           DB_CONN: ${{ secrets.DB_CONN }}
