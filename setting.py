@@ -73,6 +73,18 @@ HTTPS_URL = "https://www.qq.com"
 # 代理验证时超时时间
 VERIFY_TIMEOUT = 10
 
+# hilos concurrentes para validar candidatos. Es trabajo de red (espera
+# respuestas), no de CPU, asi que mas hilos ayuda de verdad - medido en
+# vivo: ~3 candidatos/seg con 20 hilos. Se sube el default para que
+# entornos con mucho volumen (Actions con 24+ fuentes) terminen mas rapido.
+CHECK_THREAD_COUNT = 40
+
+# limite duro (segundos) para esperar a un hilo de validacion antes de
+# seguir sin el, mismo motivo que FETCH_THREAD_JOIN_TIMEOUT: aunque cada
+# chequeo individual ya tiene su propio timeout de red, es una red de
+# seguridad extra contra un stall que ningun timeout interno cubra.
+CHECK_THREAD_JOIN_TIMEOUT = 120
+
 # 近PROXY_CHECK_COUNT次校验中允许的最大失败次数,超过则剔除代理
 MAX_FAIL_COUNT = 0
 

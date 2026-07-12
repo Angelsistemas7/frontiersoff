@@ -93,6 +93,14 @@ class ConfigHandler(withMetaclass(Singleton)):
     def verifyTimeout(self):
         return self._editable("VERIFY_TIMEOUT", "verifyTimeout")
 
+    @LazyProperty
+    def checkThreadCount(self):
+        return int(os.getenv("CHECK_THREAD_COUNT", setting.CHECK_THREAD_COUNT))
+
+    @LazyProperty
+    def checkThreadJoinTimeout(self):
+        return int(os.getenv("CHECK_THREAD_JOIN_TIMEOUT", setting.CHECK_THREAD_JOIN_TIMEOUT))
+
     # @LazyProperty
     # def proxyCheckCount(self):
     #     return int(os.getenv("PROXY_CHECK_COUNT", setting.PROXY_CHECK_COUNT))

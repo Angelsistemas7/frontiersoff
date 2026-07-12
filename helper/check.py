@@ -286,13 +286,23 @@ def Checker(tp, queue):
     :param queue: Proxy Queue
     :return:
     """
+    conf = ConfigHandler()
+    log = LogHandler("checker")
+    thread_count = conf.checkThreadCount
     thread_list = list()
-    for index in range(20):
+    for index in range(thread_count):
         thread_list.append(_ThreadChecker(tp, queue, "thread_%s" % str(index).zfill(2)))
 
     for thread in thread_list:
         thread.setDaemon(True)
         thread.start()
 
+    # mismo motivo que en helper/fetch.py: aunque cada chequeo individual ya
+    # tiene su propio timeout de red, un join() sin limite significa que un
+    # solo hilo trabado bloquearia la validacion entera para siempre. Red de
+    # seguridad extra, no la causa principal de la lentitud (esa es volumen).
     for thread in thread_list:
-        thread.join()
+        thread.join(timeout=conf.checkThreadJoinTimeout)
+        if thread.is_alive():
+            log.error("Checker - %s: no termino en %ss, se sigue sin esperarlo" % (
+                thread.name, conf.checkThreadJoinTimeout))
