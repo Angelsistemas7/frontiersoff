@@ -74,6 +74,18 @@ def runOnce():
     scheduler_log.info("runOnce: listo")
 
 
+def runShard():
+    """ Como runOnce() pero SOLO fetch + validacion de lo recien traido -
+    sin re-chequear el pool entero. Pensado para jobs de Actions en
+    paralelo (matrix) que procesan un pedazo de una fuente de mucho
+    volumen (ver PROXY_FETCHER_ONLY + SHARD_INDEX/SHARD_COUNT en
+    ConfigHandler): si cada uno de los N jobs paralelos ademas re-validara
+    el pool entero compartido, seria trabajo redundante multiplicado por N. """
+    scheduler_log.info("runShard: fetch + check de un pedazo, sin re-validar el pool entero")
+    __runProxyFetch()
+    scheduler_log.info("runShard: listo")
+
+
 def runScheduler():
     __runProxyFetch()
 

@@ -39,6 +39,14 @@ def startOnce():
     runOnce()
 
 
+def startShard():
+    """ Fetch + check de un pedazo de una fuente (ver PROXY_FETCHER_ONLY +
+    SHARD_INDEX/SHARD_COUNT), sin re-validar el pool entero """
+    __beforeStart()
+    from helper.scheduler import runShard
+    runShard()
+
+
 def __beforeStart():
     __showVersion()
     __showConfigure()
@@ -59,6 +67,11 @@ def __showConfigure():
     exclude = conf.fetcherExclude
     if exclude:
         log.info("ProxyPool configure PROXY_FETCHER_EXCLUDE: %s" % exclude)
+    only = conf.fetcherOnly
+    if only:
+        log.info("ProxyPool configure PROXY_FETCHER_ONLY: %s" % only)
+    if conf.shardCount > 1:
+        log.info("ProxyPool configure SHARD: %s/%s" % (conf.shardIndex, conf.shardCount))
     log.info("ProxyPool configure PROXY_FETCHER: auto-scan (enabled=True, exclude=%s)" % exclude)
 
 

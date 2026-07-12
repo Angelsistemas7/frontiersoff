@@ -15,6 +15,7 @@ __author__ = 'JHao'
 
 import os
 import sys
+import zlib
 import importlib
 from threading import Thread
 
@@ -134,6 +135,16 @@ class Fetcher(object):
 
         exclude_list = self.conf.fetcherExclude
         fetcher_classes = _discover_fetchers(exclude_list)
+
+        # PROXY_FETCHER_ONLY (opuesto a exclude): si esta seteado, corre
+        # SOLO esas fuentes. Pensado para jobs de Actions en paralelo que
+        # procesan una sola fuente de mucho volumen en pedazos (ver
+        # shardCount/shardIndex mas abajo) - no tiene sentido que cada
+        # pedazo tambien vuelva a traer las otras 24 fuentes.
+        only_list = self.conf.fetcherOnly
+        if only_list:
+            fetcher_classes = [c for c in fetcher_classes if c.__name__ in only_list]
+
         self.log.info("ProxyFetch : active fetchers [%s]" % ", ".join(c.name for c in fetcher_classes))
 
         for fetcher_class in fetcher_classes:
@@ -163,6 +174,24 @@ class Fetcher(object):
                         thread.fetcher_class.name, self.conf.fetchThreadJoinTimeout))
 
         self.log.info("ProxyFetch - all complete!")
-        for _ in proxy_dict.values():
-            if DoValidator.preValidator(_.proxy):
-                yield _
+
+        # Sharding: para fuentes de mucho volumen (ej. murongpig, ~100k
+        # candidatos, no entra en una sola corrida acotada de Actions) se
+        # puede dividir el trabajo en N pedazos deterministas, cada uno
+        # corriendo en un job de Actions distinto (matrix), con su propia
+        # IP efimera. crc32 en vez del hash() nativo de Python: hash() de
+        # strings esta "salado" al azar en cada proceso (proteccion contra
+        # DoS de hashing), asi que el mismo proxy caeria en un pedazo
+        # distinto en cada job - crc32 es estable entre procesos.
+        shard_count = self.conf.shardCount
+        shard_index = self.conf.shardIndex
+        skipped_shard = 0
+        for proxy_obj in proxy_dict.values():
+            if shard_count > 1 and (zlib.crc32(proxy_obj.proxy.encode()) % shard_count) != shard_index:
+                skipped_shard += 1
+                continue
+            if DoValidator.preValidator(proxy_obj.proxy):
+                yield proxy_obj
+        if shard_count > 1:
+            self.log.info("ProxyFetch : shard %s/%s - %s candidatos fuera de este pedazo" % (
+                shard_index, shard_count, skipped_shard))

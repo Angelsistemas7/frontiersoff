@@ -14,7 +14,7 @@
 __author__ = 'Claude'
 
 import click
-from helper.launcher import startOnce
+from helper.launcher import startOnce, startShard
 from setting import BANNER, VERSION
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -31,6 +31,14 @@ def once():
     """ Un solo ciclo de fetch+check y termina """
     click.echo(BANNER)
     startOnce()
+
+
+@cli.command(name="shard")
+def shard():
+    """ Fetch+check de un pedazo de una fuente (PROXY_FETCHER_ONLY + SHARD_INDEX/SHARD_COUNT),
+    sin re-validar el pool entero - para jobs de Actions en paralelo (matrix) """
+    click.echo(BANNER)
+    startShard()
 
 
 @cli.command(name="fetcher")

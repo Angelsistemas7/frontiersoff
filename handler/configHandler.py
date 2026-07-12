@@ -60,6 +60,27 @@ class ConfigHandler(withMetaclass(Singleton)):
     def fetchThreadJoinTimeout(self):
         return int(os.getenv("FETCH_THREAD_JOIN_TIMEOUT", setting.FETCH_THREAD_JOIN_TIMEOUT))
 
+    @property
+    def fetcherOnly(self):
+        """ Opuesto a fetcherExclude: si esta seteado (PROXY_FETCHER_ONLY,
+        nombres de clase separados por coma), corre SOLO esas fuentes. """
+        env = os.getenv("PROXY_FETCHER_ONLY")
+        if env is not None:
+            return [name.strip() for name in env.split(",") if name.strip()]
+        return []
+
+    @LazyProperty
+    def shardIndex(self):
+        """ Indice de este pedazo (0-based) cuando se divide una fuente en
+        varios jobs de Actions (matrix). Ver SHARD_COUNT. """
+        return int(os.getenv("SHARD_INDEX", "0"))
+
+    @LazyProperty
+    def shardCount(self):
+        """ En cuantos pedazos se divide el trabajo. 1 = sin sharding
+        (comportamiento normal). """
+        return int(os.getenv("SHARD_COUNT", "1"))
+
     @LazyProperty
     def httpUrl(self):
         return os.getenv("HTTP_URL", setting.HTTP_URL)
