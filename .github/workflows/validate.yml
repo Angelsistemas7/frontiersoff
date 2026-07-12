@@ -18,16 +18,21 @@ on:
   schedule:
     # dos crons distintos, uno por job (Actions no permite cron por job
     # directo - se gatea cada job con "if" comparando cual cron disparo).
-    # */30: job principal (24 fuentes, excluye MuRongPIG).
-    - cron: "*/30 * * * *"
-    # cada 3h: job de murongpig en pedazos - su contenido no cambia tan
-    # rapido como para justificar cada 30 min, y son 40 jobs paralelos.
-    - cron: "0 */3 * * *"
+    # */15: job principal (25 fuentes, excluye MuRongPIG). Subido de */30 a
+    # */15 (repo publico = minutos de Actions gratis/ilimitados, el costo
+    # real esta en la cuota de comandos del Redis gratis de Upstash y en no
+    # golpear demasiado fuerte los sitios de origen - si se ve saturado el
+    # free tier de Upstash, bajar esto de nuevo antes que nada).
+    - cron: "*/15 * * * *"
+    # cada 1h (antes 3h): job de murongpig en pedazos. Cada pedazo mide
+    # ~14 min contra un timeout de 25, hay margen de sobra para ir mas
+    # seguido sin acercarse al limite.
+    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 jobs:
   validate:
-    if: github.event_name != 'schedule' || github.event.schedule == '*/30 * * * *'
+    if: github.event_name != 'schedule' || github.event.schedule == '*/15 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -51,16 +56,14 @@ jobs:
         run: python proxyPool.py once
 
   validate-murongpig-shard:
-    if: github.event_name != 'schedule' || github.event.schedule == '0 */3 * * *'
+    if: github.event_name != 'schedule' || github.event.schedule == '0 * * * *'
     # MuRongPIGFetcher aporta ~100k candidatos - dividido en 40 pedazos de
     # ~2500 c/u para que cada job entre comodo en su timeout (medido en
     # vivo: ~3 candidatos/seg de validacion real, 2500 candidatos ~14 min).
     # Cada pedazo corre en su propio runner de GitHub, con su propia IP
     # efimera - ningun candidato se toca desde una IP fija/rastreable.
-    # Cron propio y menos frecuente que el job principal: el contenido de
-    # murongpig no cambia tan rapido como para justificar cada 30 min, y
-    # 40 jobs en paralelo cada 30 min seria un uso innecesariamente alto
-    # de runners (aunque sea gratis).
+    # Subido de cada 3h a cada 1h: con 25 min de timeout y ~14 min medidos,
+    # hay margen para ir mas seguido sin acercarse al limite.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
