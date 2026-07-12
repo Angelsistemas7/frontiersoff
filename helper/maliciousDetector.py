@@ -12,6 +12,7 @@
 """
 import difflib
 import hashlib
+import random
 import socket
 import ssl
 import threading
@@ -38,9 +39,14 @@ EXPECTED_PROXY_HEADERS = {
 
 INJECTION_MARKERS = ("<script", "<iframe", "document.write")
 
+# Un proxy malicioso "selectivo" podria portarse bien especificamente con
+# el/los dominio(s) de canary si son siempre los mismos y reconocibles
+# (ej. example.com es EL dominio clasico de testing) - y manipular trafico
+# real hacia otros destinos sin que este detector lo note nunca. Por eso
+# se elige al azar entre varios dominios de referencia en cada chequeo, en
+# vez de pegarle siempre al mismo: mas dificil de anticipar/evadir.
 _baseline_lock = threading.Lock()
-_baseline = None
-_baseline_ts = 0
+_baseline_cache = {}  # url -> {"content_body"/"tls_fingerprint": str, "ts": float}
 _BASELINE_TTL = 1800  # 30 min
 
 
@@ -53,29 +59,32 @@ def _split_proxy(proxy_str):
     return netutil.splitHostPort(netutil.stripAuth(proxy_str))
 
 
-def _fetch_baseline():
-    """ Contenido/headers/certificado obtenidos SIN proxy, usados como referencia """
-    baseline = {"content_body": "", "tls_fingerprint": ""}
+def _fetch_content_baseline(url):
     try:
-        r = requests.get(conf.maliciousCanaryHttpUrl, timeout=8)
-        baseline["content_body"] = r.text
+        r = requests.get(url, timeout=8)
+        return r.text
     except Exception as e:
-        log.error("baseline content fetch failed: %s" % str(e))
-    try:
-        baseline["tls_fingerprint"] = _cert_fingerprint_direct(
-            urlparse(conf.maliciousCanaryHttpsUrl).hostname)
-    except Exception as e:
-        log.error("baseline tls fetch failed: %s" % str(e))
-    return baseline
+        log.error("baseline content fetch failed (%s): %s" % (url, str(e)))
+        return ""
 
 
-def _get_baseline():
-    global _baseline, _baseline_ts
+def _fetch_tls_baseline(url):
+    try:
+        return _cert_fingerprint_direct(urlparse(url).hostname)
+    except Exception as e:
+        log.error("baseline tls fetch failed (%s): %s" % (url, str(e)))
+        return ""
+
+
+def _get_baseline(url, fetch_func):
+    """ Cache por URL (no global): cada dominio de canary tiene su propio
+    baseline, para poder rotar entre varios sin recalcular todo cada vez. """
     with _baseline_lock:
-        if _baseline is None or (time.time() - _baseline_ts) > _BASELINE_TTL:
-            _baseline = _fetch_baseline()
-            _baseline_ts = time.time()
-        return _baseline
+        cached = _baseline_cache.get(url)
+        if cached is None or (time.time() - cached["ts"]) > _BASELINE_TTL:
+            cached = {"value": fetch_func(url), "ts": time.time()}
+            _baseline_cache[url] = cached
+        return cached["value"]
 
 
 def _cert_fingerprint_direct(host, port=443, timeout=8):
@@ -106,19 +115,24 @@ def _cert_fingerprint_via_proxy(proxy_str, host, port=443, timeout=8):
 
 def inspect(proxy_str):
     """
-    Ejecuta todas las señales de manipulación contra un proxy.
+    Ejecuta todas las señales de manipulación contra un proxy. Cada llamada
+    elige al azar un dominio de referencia distinto de cada lista (HTTP,
+    HTTPS, echo) - ver comentario junto a _baseline_cache sobre por qué.
     Returns:
         (risk_score:int 0-100, reasons:list[dict{check,points,detail}])
     """
-    baseline = _get_baseline()
     reasons = []
+    http_url = random.choice(conf.maliciousCanaryHttpUrls)
+    https_url = random.choice(conf.maliciousCanaryHttpsUrls)
+    echo_url = random.choice(conf.maliciousCanaryEchoUrls)
 
     # 1) Certificado TLS distinto -> el proxy está interceptando HTTPS (MITM)
-    if baseline.get("tls_fingerprint"):
+    tls_baseline = _get_baseline(https_url, _fetch_tls_baseline)
+    if tls_baseline:
         try:
-            host = urlparse(conf.maliciousCanaryHttpsUrl).hostname
+            host = urlparse(https_url).hostname
             fp = _cert_fingerprint_via_proxy(proxy_str, host)
-            if fp != baseline["tls_fingerprint"]:
+            if fp != tls_baseline:
                 reasons.append({
                     "check": "tls_fingerprint_mismatch",
                     "points": 60,
@@ -130,14 +144,15 @@ def inspect(proxy_str):
             pass  # inconcluso (p.ej. el proxy no soporta CONNECT a 443): no penaliza
 
     # 2) Contenido de una página estática conocida, alterado o con inyección
+    content_baseline = _get_baseline(http_url, _fetch_content_baseline)
     try:
-        r = requests.get(conf.maliciousCanaryHttpUrl, proxies=_proxies_dict(proxy_str),
+        r = requests.get(http_url, proxies=_proxies_dict(proxy_str),
                           timeout=8, allow_redirects=True)
         body_lower = r.text.lower()
-        baseline_lower = baseline.get("content_body", "").lower()
+        baseline_lower = content_baseline.lower()
         injected = [m for m in INJECTION_MARKERS if m in body_lower and m not in baseline_lower]
-        similarity = (difflib.SequenceMatcher(None, baseline["content_body"], r.text).ratio()
-                      if baseline.get("content_body") else 1.0)
+        similarity = (difflib.SequenceMatcher(None, content_baseline, r.text).ratio()
+                      if content_baseline else 1.0)
         if injected and similarity < 0.3:
             # No es una inyección puntual: la página completa fue reemplazada por
             # otro contenido (visto en producción: un proxy devolvía una web de
@@ -158,7 +173,7 @@ def inspect(proxy_str):
                 "detail": ("El proxy inyectó contenido (%s) en una página que normalmente "
                            "no lo tiene.") % ", ".join(injected),
             })
-        elif baseline.get("content_body") and similarity < 0.9:
+        elif content_baseline and similarity < 0.9:
             reasons.append({
                 "check": "content_modified",
                 "points": 25,
@@ -169,7 +184,7 @@ def inspect(proxy_str):
         # 2b) redirección a un dominio distinto al solicitado
         if r.history:
             final_host = urlparse(r.url).hostname
-            expected_host = urlparse(conf.maliciousCanaryHttpUrl).hostname
+            expected_host = urlparse(http_url).hostname
             if final_host and final_host != expected_host:
                 reasons.append({
                     "check": "suspicious_redirect",
@@ -183,7 +198,7 @@ def inspect(proxy_str):
     # 3) Headers añadidos que el servidor recibió pero que nosotros no enviamos
     try:
         sent_headers = {"User-Agent": "proxy-manager-canary/1.0", "Accept": "*/*"}
-        r2 = requests.get(conf.maliciousCanaryEchoUrl, headers=sent_headers,
+        r2 = requests.get(echo_url, headers=sent_headers,
                            proxies=_proxies_dict(proxy_str), timeout=8)
         seen_headers = {k.lower(): v for k, v in r2.json().get("headers", {}).items()}
         sent_lower = {k.lower() for k in sent_headers}

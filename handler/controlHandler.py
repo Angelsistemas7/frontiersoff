@@ -33,6 +33,8 @@ EDITABLE_DEFAULTS = {
     "maxFailCount": setting.MAX_FAIL_COUNT,
     "whitelistMinChecks": setting.WHITELIST_MIN_CHECKS,
     "whitelistMaxLatencyMs": setting.WHITELIST_MAX_LATENCY_MS,
+    "viewerSafeMinChecks": setting.VIEWER_SAFE_MIN_CHECKS,
+    "viewerSafeMinBandwidthKbps": setting.VIEWER_SAFE_MIN_BANDWIDTH_KBPS,
     "stickyDefaultTtl": setting.STICKY_DEFAULT_TTL,
     "stickyMaxTtl": setting.STICKY_MAX_TTL,
 }

@@ -21,7 +21,8 @@ class Proxy(object):
                  source="", check_count=0, last_status="", last_time="", https=False,
                  risk_score=0, risk_reasons=None, risk_strikes=0, trust_status="trusted",
                  reported=False, reported_at="", city="", asn="", isp="", network_type="",
-                 latency_ms=0, is_whitelisted=False, socks5=False, ssh_available=False):
+                 latency_ms=0, is_whitelisted=False, socks5=False, ssh_available=False,
+                 bandwidth_kbps=0, viewer_safe=False):
         self._proxy = proxy
         self._fail_count = fail_count
         self._region = region
@@ -49,6 +50,11 @@ class Proxy(object):
         # -------- protocolos --------
         self._socks5 = socks5                   # tambien responde como SOCKS5 (DNS remoto)
         self._ssh_available = ssh_available     # el host tiene SSH abierto (util p/ nodos propios)
+        self._bandwidth_kbps = bandwidth_kbps   # ultima medicion real de ancho de banda (kbps), 0 = nunca medido
+        # filtro mas estricto que "trusted": pensado para trafico de gente
+        # real (ej. espectadores viendo un stream), no solo el backend
+        # propio. Ver helper/check.py::viewerSafeChecker.
+        self._viewer_safe = viewer_safe
 
     @classmethod
     def createFromJson(cls, proxy_json):
@@ -76,6 +82,8 @@ class Proxy(object):
                    is_whitelisted=_dict.get("is_whitelisted", False),
                    socks5=_dict.get("socks5", False),
                    ssh_available=_dict.get("ssh_available", False),
+                   bandwidth_kbps=_dict.get("bandwidth_kbps", 0),
+                   viewer_safe=_dict.get("viewer_safe", False),
                    )
 
     @property
@@ -194,6 +202,17 @@ class Proxy(object):
         return self._ssh_available
 
     @property
+    def bandwidth_kbps(self):
+        """ Ultima medicion real de ancho de banda (kbps). 0 = nunca se midio (no es automatico). """
+        return self._bandwidth_kbps
+
+    @property
+    def viewer_safe(self):
+        """ True si pasa el filtro estricto para trafico de gente real
+        (ver helper/check.py::viewerSafeChecker) - no solo "trusted". """
+        return self._viewer_safe
+
+    @property
     def to_dict(self):
         """ 属性字典 """
         return {"proxy": self.proxy,
@@ -218,7 +237,9 @@ class Proxy(object):
                 "latency_ms": self.latency_ms,
                 "is_whitelisted": self.is_whitelisted,
                 "socks5": self.socks5,
-                "ssh_available": self.ssh_available}
+                "ssh_available": self.ssh_available,
+                "bandwidth_kbps": self.bandwidth_kbps,
+                "viewer_safe": self.viewer_safe}
 
     @property
     def to_json(self):
@@ -304,6 +325,14 @@ class Proxy(object):
     @ssh_available.setter
     def ssh_available(self, value):
         self._ssh_available = value
+
+    @bandwidth_kbps.setter
+    def bandwidth_kbps(self, value):
+        self._bandwidth_kbps = value
+
+    @viewer_safe.setter
+    def viewer_safe(self, value):
+        self._viewer_safe = value
 
     def add_source(self, source_str):
         if source_str:

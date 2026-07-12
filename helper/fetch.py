@@ -143,8 +143,24 @@ class Fetcher(object):
             thread.setDaemon(True)
             thread.start()
 
+        # Cada fuente ya tiene su propio timeout de red (via WebRequest,
+        # 5-10s x reintentos), pero eso no cubre TODOS los casos: una
+        # resolucion DNS que se cuelga, o un stall a nivel TCP, puede
+        # bloquear un hilo mucho mas alla de su timeout configurado (visto
+        # en produccion: un ciclo entero colgado 10+ minutos sin avanzar,
+        # con CPU casi en cero - consistente con un hilo esperando I/O que
+        # nunca vuelve). Como se espera a TODOS los hilos antes de seguir,
+        # un solo fetcher trabado bloqueaba el pool entero indefinidamente.
+        # Por eso hay un limite duro por hilo: si no termino a tiempo, se
+        # sigue sin el (queda como daemon, muere solo cuando el proceso
+        # termine) en vez de esperarlo para siempre.
         for thread in thread_list:
-            thread.join()
+            thread.join(timeout=self.conf.fetchThreadJoinTimeout)
+            if thread.is_alive():
+                self.log.error(
+                    "ProxyFetch - %s: no termino en %ss, se sigue sin esperarlo "
+                    "(datos parciales si ya trajo algo)" % (
+                        thread.fetcher_class.name, self.conf.fetchThreadJoinTimeout))
 
         self.log.info("ProxyFetch - all complete!")
         for _ in proxy_dict.values():

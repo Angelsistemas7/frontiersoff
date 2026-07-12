@@ -54,6 +54,10 @@ class ConfigHandler(withMetaclass(Singleton)):
         return getattr(setting, 'PROXY_FETCHER_EXCLUDE', [])
 
     @LazyProperty
+    def fetchThreadJoinTimeout(self):
+        return int(os.getenv("FETCH_THREAD_JOIN_TIMEOUT", setting.FETCH_THREAD_JOIN_TIMEOUT))
+
+    @LazyProperty
     def httpUrl(self):
         return os.getenv("HTTP_URL", setting.HTTP_URL)
 
@@ -90,16 +94,19 @@ class ConfigHandler(withMetaclass(Singleton)):
         return os.getenv("TIMEZONE", setting.TIMEZONE)
 
     @LazyProperty
-    def maliciousCanaryHttpUrl(self):
-        return os.getenv("MALICIOUS_CANARY_HTTP_URL", setting.MALICIOUS_CANARY_HTTP_URL)
+    def maliciousCanaryHttpUrls(self):
+        env = os.getenv("MALICIOUS_CANARY_HTTP_URLS")
+        return env.split(",") if env else setting.MALICIOUS_CANARY_HTTP_URLS
 
     @LazyProperty
-    def maliciousCanaryHttpsUrl(self):
-        return os.getenv("MALICIOUS_CANARY_HTTPS_URL", setting.MALICIOUS_CANARY_HTTPS_URL)
+    def maliciousCanaryHttpsUrls(self):
+        env = os.getenv("MALICIOUS_CANARY_HTTPS_URLS")
+        return env.split(",") if env else setting.MALICIOUS_CANARY_HTTPS_URLS
 
     @LazyProperty
-    def maliciousCanaryEchoUrl(self):
-        return os.getenv("MALICIOUS_CANARY_ECHO_URL", setting.MALICIOUS_CANARY_ECHO_URL)
+    def maliciousCanaryEchoUrls(self):
+        env = os.getenv("MALICIOUS_CANARY_ECHO_URLS")
+        return env.split(",") if env else setting.MALICIOUS_CANARY_ECHO_URLS
 
     @property
     def maliciousQuarantineThreshold(self):
@@ -139,12 +146,32 @@ class ConfigHandler(withMetaclass(Singleton)):
         return self._editable("WHITELIST_MAX_LATENCY_MS", "whitelistMaxLatencyMs")
 
     @property
+    def viewerSafeMinChecks(self):
+        return self._editable("VIEWER_SAFE_MIN_CHECKS", "viewerSafeMinChecks")
+
+    @property
+    def viewerSafeMinBandwidthKbps(self):
+        return self._editable("VIEWER_SAFE_MIN_BANDWIDTH_KBPS", "viewerSafeMinBandwidthKbps")
+
+    @property
     def stickyDefaultTtl(self):
         return self._editable("STICKY_DEFAULT_TTL", "stickyDefaultTtl")
 
     @property
     def stickyMaxTtl(self):
         return self._editable("STICKY_MAX_TTL", "stickyMaxTtl")
+
+    @LazyProperty
+    def bandwidthTestUrl(self):
+        return os.getenv("BANDWIDTH_TEST_URL", setting.BANDWIDTH_TEST_URL)
+
+    @LazyProperty
+    def bandwidthTestSizeBytes(self):
+        return int(os.getenv("BANDWIDTH_TEST_SIZE_BYTES", setting.BANDWIDTH_TEST_SIZE_BYTES))
+
+    @LazyProperty
+    def bandwidthTestTimeout(self):
+        return int(os.getenv("BANDWIDTH_TEST_TIMEOUT", setting.BANDWIDTH_TEST_TIMEOUT))
 
     def _editable(self, env_var, control_key):
         """

@@ -56,6 +56,14 @@ TABLE_NAME = 'use_proxy'
 # 如需临时禁用某个 fetcher，在下方黑名单中添加类名（不改源文件）
 PROXY_FETCHER_EXCLUDE = []
 
+# limite duro (segundos) para esperar a un hilo de fetcher individual antes
+# de seguir sin el. Los fetchers ya tienen su propio timeout de red interno
+# (5-10s x reintentos), pero eso no cubre stalls a nivel DNS/TCP que
+# requests a veces no respeta - un solo hilo colgado bloqueaba el ciclo
+# entero (visto en produccion). 60s da margen de sobra a un fetcher lento
+# de verdad sin dejar que uno roto tumbe todo el pool.
+FETCH_THREAD_JOIN_TIMEOUT = 60
+
 # ############# proxy validator #################
 # 代理验证目标网站
 HTTP_URL = "http://httpbin.org"
@@ -90,10 +98,25 @@ PROXY_REGION = True
 TIMEZONE = "Asia/Shanghai"
 
 # ############# malicious proxy detection #################
-# URLs de referencia (canary) usadas para comparar "directo" vs "a través del proxy"
-MALICIOUS_CANARY_HTTP_URL = "http://example.com/"
-MALICIOUS_CANARY_HTTPS_URL = "https://example.com/"
-MALICIOUS_CANARY_ECHO_URL = "http://httpbin.org/get"
+# URLs de referencia (canary) usadas para comparar "directo" vs "a través del
+# proxy". Se elige una al azar de cada lista en CADA chequeo (en vez de
+# pegarle siempre al mismo dominio) para que un proxy malicioso "selectivo"
+# no pueda simplemente portarse bien con el unico dominio de testing
+# conocido (ej. example.com es EL clasico) y manipular todo lo demas.
+MALICIOUS_CANARY_HTTP_URLS = [
+    "http://example.com/",
+    "http://info.cern.ch/",
+    "http://neverssl.com/",
+]
+MALICIOUS_CANARY_HTTPS_URLS = [
+    "https://example.com/",
+    "https://www.cloudflare.com/",
+    "https://www.google.com/",
+]
+MALICIOUS_CANARY_ECHO_URLS = [
+    "http://httpbin.org/get",
+    "http://postman-echo.com/get",
+]
 
 # risk_score >= este umbral -> cuarentena (se saca de /get pero NO se descarta ni se reporta)
 MALICIOUS_QUARANTINE_THRESHOLD = 30
@@ -124,6 +147,41 @@ WHITELIST_MIN_CHECKS = 3
 
 # latencia maxima (ms) para entrar en la lista blanca
 WHITELIST_MAX_LATENCY_MS = 3000
+
+# ############# viewer_safe: filtro para trafico de gente real #################
+# Mas estricto que "trusted"/whitelist: pensado para cuando el proxy no lo
+# usa solo tu backend (scraping, chequeos) sino gente real (ej. espectadores
+# viendo un stream a traves de el). Un proxy scrapeado de fuentes publicas
+# necesita muchas mas validaciones limpias seguidas Y un ancho de banda real
+# medido para calificar. Los nodos propios (source "own:...") no necesitan
+# cumplir el minimo de bandwidth/checks - se asume que ya confias en ellos
+# por ser tuyos, pero igual deben estar "trusted" y sin ninguna señal de
+# riesgo jamas registrada.
+VIEWER_SAFE_MIN_CHECKS = 10
+
+# ancho de banda minimo (kbps) para calificar - solo cuenta si se corrio
+# /bandwidth/test/ en algun momento (no es automatico, ver helper/bandwidthTest.py)
+VIEWER_SAFE_MIN_BANDWIDTH_KBPS = 500
+
+# ############# nodos propios: motor gost #################
+# Binario de gost (https://github.com/go-gost/gost/releases). Si no esta en
+# el PATH, poner la ruta completa via variable de entorno GOST_BIN.
+GOST_BIN = "gost"
+
+# ############# medicion de ancho de banda #################
+# httpbin.org/bytes/<n> devuelve n bytes aleatorios - mismo host de
+# referencia ya usado en HTTP_URL/canary del detector de maliciosos.
+BANDWIDTH_TEST_URL = "http://httpbin.org/bytes"
+
+# tamano del payload de prueba (bytes). Ojo: httpbin.org/bytes/<n> tiene un
+# tope silencioso de ~100KB (100_000) - pedir mas no rompe nada, pero
+# httpbin devuelve como mucho eso, verificado en vivo. Se deja igual en
+# 100_000 para que el numero pedido coincida con el que realmente se mide.
+BANDWIDTH_TEST_SIZE_BYTES = 100_000
+
+# timeout de la descarga de prueba (segundos) - mas alto que VERIFY_TIMEOUT
+# porque acá se espera transferir datos de verdad, no solo un HEAD.
+BANDWIDTH_TEST_TIMEOUT = 20
 
 # ############# rotacion y sticky sessions #################
 # TTL por defecto de una sticky session (segundos). "IP estatica" = usar un

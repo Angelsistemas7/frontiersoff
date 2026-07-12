@@ -65,6 +65,7 @@ class DoValidator(object):
                 cls.sshSetter(proxy)
             cls.maliciousChecker(proxy)
             cls.whitelistChecker(proxy)
+            cls.viewerSafeChecker(proxy)
         else:
             proxy.fail_count += 1
         return proxy
@@ -117,6 +118,36 @@ class DoValidator(object):
             and proxy.fail_count == 0
             and 0 < proxy.latency_ms <= cls.conf.whitelistMaxLatencyMs
         )
+
+    @classmethod
+    def viewerSafeChecker(cls, proxy):
+        """
+        Filtro mas estricto que "trusted"/whitelist, pensado para proxies
+        que va a usar gente real (ej. espectadores viendo un stream), no
+        solo el backend propio. Un proxy scrapeado necesita: cero señales
+        de riesgo en el chequeo actual, nunca haber confirmado una
+        detección de manipulación, varias validaciones limpias seguidas, Y
+        un ancho de banda real medido (no automatico, hay que haber
+        corrido /bandwidth/test/ en algun momento). Los nodos propios
+        ("own:...") se eximen del minimo de checks/bandwidth - se asume
+        que ya confias en tu propia infraestructura - pero igual deben
+        estar "trusted" y sin ninguna señal de riesgo.
+        """
+        is_own = any(s.startswith('own:') for s in proxy.source.split('/'))
+        base_ok = (
+            proxy.trust_status == "trusted"
+            and proxy.risk_score == 0
+            and proxy.risk_strikes == 0
+            and proxy.fail_count == 0
+        )
+        if is_own:
+            proxy.viewer_safe = base_ok
+        else:
+            proxy.viewer_safe = (
+                base_ok
+                and proxy.check_count >= cls.conf.viewerSafeMinChecks
+                and proxy.bandwidth_kbps >= cls.conf.viewerSafeMinBandwidthKbps
+            )
 
     @classmethod
     def httpValidator(cls, proxy):
