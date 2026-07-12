@@ -41,4 +41,9 @@ jobs:
         env:
           DB_CONN: ${{ secrets.DB_CONN }}
           ABUSEIPDB_API_KEY: ${{ secrets.ABUSEIPDB_API_KEY }}
+          # MuRongPIGFetcher aporta ~100k candidatos por si solo - perfecto
+          # para el scheduler local (sin limite de tiempo, los absorbe de a
+          # poco en ciclos de 2 min), imposible de validar completo en una
+          # corrida acotada de Actions. Se excluye solo aca.
+          PROXY_FETCHER_EXCLUDE: "MuRongPIGFetcher"
         run: python proxyPool.py once

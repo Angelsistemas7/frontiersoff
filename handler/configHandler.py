@@ -50,6 +50,9 @@ class ConfigHandler(withMetaclass(Singleton)):
 
     @property
     def fetcherExclude(self):
+        env = os.getenv("PROXY_FETCHER_EXCLUDE")
+        if env is not None:
+            return [name.strip() for name in env.split(",") if name.strip()]
         reload_six(setting)
         return getattr(setting, 'PROXY_FETCHER_EXCLUDE', [])
 
