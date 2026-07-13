@@ -18,21 +18,29 @@ on:
   schedule:
     # dos crons distintos, uno por job (Actions no permite cron por job
     # directo - se gatea cada job con "if" comparando cual cron disparo).
-    # */15: job principal (25 fuentes, excluye MuRongPIG). Subido de */30 a
-    # */15 (repo publico = minutos de Actions gratis/ilimitados, el costo
-    # real esta en la cuota de comandos del Redis gratis de Upstash y en no
-    # golpear demasiado fuerte los sitios de origen - si se ve saturado el
-    # free tier de Upstash, bajar esto de nuevo antes que nada).
-    - cron: "*/15 * * * *"
-    # cada 1h (antes 3h): job de murongpig en pedazos. Cada pedazo mide
-    # ~14 min contra un timeout de 25, hay margen de sobra para ir mas
-    # seguido sin acercarse al limite.
-    - cron: "0 * * * *"
+    #
+    # INCIDENTE 2026-07-13: se encontro el Redis gratis de Upstash con su
+    # cuota de 500.000 requests/mes agotada AL 100% (confirmado en los logs
+    # de varias corridas: "max requests limit exceeded. Limit: 500000,
+    # Usage: 500000"). Se confirmo con timestamps que esto NO lo causo el
+    # cron mas seguido (la cuota ya estaba agotada desde antes de ese
+    # cambio) - el consumo real viene de validar los ~100.000 candidatos de
+    # MuRongPIG (cada uno genera varios comandos Redis: existencia, hset,
+    # etc.), sin importar cada cuanto se dispare. 40 shards x ~2500
+    # candidatos x varios comandos cada uno agota la cuota mensual en pocas
+    # corridas. Se bajan ambos crons a algo mucho mas conservador hasta
+    # confirmar que la cuota se reinicio (revisar el dashboard de Upstash).
+    #
+    # */30: job principal (25 fuentes, excluye MuRongPIG).
+    - cron: "*/30 * * * *"
+    # 1 vez por dia (antes cada 1h, antes cada 3h): job de murongpig en
+    # pedazos - es el que de lejos mas comandos Redis consume.
+    - cron: "0 3 * * *"
   workflow_dispatch: {}
 
 jobs:
   validate:
-    if: github.event_name != 'schedule' || github.event.schedule == '*/15 * * * *'
+    if: github.event_name != 'schedule' || github.event.schedule == '*/30 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -56,14 +64,15 @@ jobs:
         run: python proxyPool.py once
 
   validate-murongpig-shard:
-    if: github.event_name != 'schedule' || github.event.schedule == '0 * * * *'
+    if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * *'
     # MuRongPIGFetcher aporta ~100k candidatos - dividido en 40 pedazos de
     # ~2500 c/u para que cada job entre comodo en su timeout (medido en
     # vivo: ~3 candidatos/seg de validacion real, 2500 candidatos ~14 min).
     # Cada pedazo corre en su propio runner de GitHub, con su propia IP
     # efimera - ningun candidato se toca desde una IP fija/rastreable.
-    # Subido de cada 3h a cada 1h: con 25 min de timeout y ~14 min medidos,
-    # hay margen para ir mas seguido sin acercarse al limite.
+    # Bajado a 1 vez por dia (ver comentario del incidente arriba): es la
+    # fuente que mas comandos Redis consume por lejos, 100k candidatos
+    # cada vez que corre.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
