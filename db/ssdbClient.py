@@ -97,6 +97,15 @@ class SsdbClient(object):
         """
         return self.__conn.hexists(self.name, proxy_str)
 
+    def existsMany(self, proxy_strs):
+        """ Version en LOTE de exists() - ver RedisClient.existsMany para el
+        porque. SSDB tambien habla protocolo Redis via este mismo cliente,
+        asi que hmget funciona igual. """
+        if not proxy_strs:
+            return set()
+        values = self.__conn.hmget(self.name, proxy_strs)
+        return {p for p, v in zip(proxy_strs, values) if v is not None}
+
     def update(self, proxy_obj):
         """
         更新 proxy 属性

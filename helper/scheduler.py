@@ -33,10 +33,30 @@ def __runProxyFetch():
     if control.is_paused():
         scheduler_log.info("proxy_fetch: paused, skip")
         return
-    proxy_queue = Queue()
     proxy_fetcher = Fetcher()
+    candidates = list(proxy_fetcher.run())
 
-    for proxy in proxy_fetcher.run():
+    # Filtro EN LOTE de "ya lo conocemos" ANTES de validar nada - bug real
+    # de produccion: antes este chequeo se hacia por candidato DESPUES de
+    # la validacion completa (HTTP real + detector de maliciosos), uno por
+    # uno via 3 comandos Redis c/u (exists en use/quarantine/malicious).
+    # Con los ~100k candidatos de MuRongPIG eso solo explicaba la enorme
+    # mayoria de los comandos consumidos contra la cuota gratis de Upstash
+    # (confirmado en su panel: 984,723 reads vs 15,277 writes en un mes).
+    # Ahora: 3 comandos Redis TOTALES (uno por tabla, para todos los
+    # candidatos juntos) para saber cuales filtrar, y encima se ahorra la
+    # validacion real (red, detector) de los que ya conociamos.
+    proxy_handler = ProxyHandler()
+    risk_handler = RiskHandler()
+    already_known = (proxy_handler.existsMany(candidates)
+                      | risk_handler.existsManyQuarantine(candidates)
+                      | risk_handler.existsManyMalicious(candidates))
+    new_candidates = [p for p in candidates if p.proxy not in already_known]
+    scheduler_log.info("proxy_fetch: %d candidatos, %d ya conocidos (filtrados en lote), %d nuevos a validar" % (
+        len(candidates), len(already_known), len(new_candidates)))
+
+    proxy_queue = Queue()
+    for proxy in new_candidates:
         proxy_queue.put(proxy)
 
     Checker("raw", proxy_queue)

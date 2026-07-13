@@ -59,6 +59,10 @@ class RiskHandler(object):
     def existsQuarantine(self, proxy):
         return self.quarantine.exists(proxy.proxy)
 
+    def existsManyQuarantine(self, proxies):
+        """ Version en LOTE - ver db/redisClient.py::existsMany. """
+        return self.quarantine.existsMany([p.proxy for p in proxies])
+
     def getAllQuarantine(self):
         items = self.quarantine.getAll(https=False)
         return [Proxy.createFromJson(_) for _ in items]
@@ -72,6 +76,10 @@ class RiskHandler(object):
 
     def existsMalicious(self, proxy):
         return self.malicious.exists(proxy.proxy)
+
+    def existsManyMalicious(self, proxies):
+        """ Version en LOTE - ver db/redisClient.py::existsMany. """
+        return self.malicious.existsMany([p.proxy for p in proxies])
 
     def getAllMalicious(self):
         items = self.malicious.getAll(https=False)

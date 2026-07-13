@@ -222,15 +222,14 @@ class _ThreadChecker(Thread):
 
     def __ifRaw(self, proxy):
         if proxy.last_status:
-            already_known = (self.proxy_handler.exists(proxy)
-                              or self.risk_handler.existsQuarantine(proxy)
-                              or self.risk_handler.existsMalicious(proxy))
-            if already_known:
-                self.log.info('RawProxyCheck - {}: {} exist'.format(self.name, proxy.proxy.ljust(23)))
-            else:
-                self.log.info('RawProxyCheck - {}: {} pass ({})'.format(
-                    self.name, proxy.proxy.ljust(23), proxy.trust_status))
-                self.__route(proxy)
+            # el chequeo de "ya lo conocemos?" se hace EN LOTE, antes de
+            # validar, en helper/scheduler.py::__runProxyFetch (3 comandos
+            # Redis para TODOS los candidatos, en vez de 3 por candidato) - ver
+            # el comentario ahi para el porque. Si un proxy llega hasta aca es
+            # porque ya se filtro como nuevo.
+            self.log.info('RawProxyCheck - {}: {} pass ({})'.format(
+                self.name, proxy.proxy.ljust(23), proxy.trust_status))
+            self.__route(proxy)
         else:
             self.log.info('RawProxyCheck - {}: {} fail'.format(self.name, proxy.proxy.ljust(23)))
 

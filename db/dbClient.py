@@ -106,6 +106,9 @@ class DbClient(withMetaclass(Singleton)):
     def exists(self, key, **kwargs):
         return self.client.exists(key, **kwargs)
 
+    def existsMany(self, keys, **kwargs):
+        return self.client.existsMany(keys, **kwargs)
+
     def pop(self, https, **kwargs):
         return self.client.pop(https, **kwargs)
 

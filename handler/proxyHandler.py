@@ -77,6 +77,16 @@ class ProxyHandler(object):
         """
         return self.db.exists(proxy.proxy)
 
+    def existsMany(self, proxies):
+        """ Version en LOTE de exists(): un solo comando Redis para toda
+        la lista, en vez de uno por proxy. Ver db/redisClient.py::existsMany
+        para el porque (bug real: cuota de Upstash agotada por chequeos
+        uno-por-uno sobre ~100k candidatos).
+        :param proxies: lista de Proxy obj
+        :return: set de proxy str (ip:port) que YA existen
+        """
+        return self.db.existsMany([p.proxy for p in proxies])
+
     def getCount(self):
         """
         return raw_proxy and use_proxy count

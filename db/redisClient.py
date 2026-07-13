@@ -102,6 +102,24 @@ class RedisClient(object):
         """
         return self.__conn.hexists(self.name, proxy_str)
 
+    def existsMany(self, proxy_strs):
+        """
+        Version en LOTE de exists(): un solo comando Redis (HMGET) para
+        saber cuales de una lista grande de candidatos ya existen, en vez
+        de un HEXISTS por candidato. Bug real encontrado en produccion: al
+        procesar los ~100k candidatos de MuRongPIG, este chequeo hecho uno
+        por uno era el responsable de la enorme mayoria de los comandos
+        Redis consumidos contra la cuota gratis de Upstash (500k/mes) -
+        confirmado en su panel: 984,723 reads vs 15,277 writes en un mes.
+        HMGET con miles de fields sigue contando como UN solo comando.
+        :param proxy_strs: lista de proxy str (ip:port)
+        :return: set de los que YA existen
+        """
+        if not proxy_strs:
+            return set()
+        values = self.__conn.hmget(self.name, proxy_strs)
+        return {p for p, v in zip(proxy_strs, values) if v is not None}
+
     def update(self, proxy_obj):
         """
         更新 proxy 属性
