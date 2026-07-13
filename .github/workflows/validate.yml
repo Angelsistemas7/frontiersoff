@@ -31,16 +31,19 @@ on:
     # corridas. Se bajan ambos crons a algo mucho mas conservador hasta
     # confirmar que la cuota se reinicio (revisar el dashboard de Upstash).
     #
-    # */30: job principal (25 fuentes, excluye MuRongPIG).
-    - cron: "*/30 * * * *"
-    # 1 vez por dia (antes cada 1h, antes cada 3h): job de murongpig en
-    # pedazos - es el que de lejos mas comandos Redis consume.
-    - cron: "0 3 * * *"
+    # cada 1h (antes */30, antes */15): job principal (25 fuentes, excluye
+    # MuRongPIG). Pedido explicito del usuario tras el incidente de cuota.
+    - cron: "0 * * * *"
+    # cada 12h (antes 1 vez/dia, antes cada 1h, antes cada 3h): job de
+    # murongpig en pedazos - es el que de lejos mas comandos Redis consume
+    # (~100k candidatos por corrida). Pedido explicito del usuario ("cada
+    # 11 horas, puede ser") - se redondeo a 12h por prolijidad del cron.
+    - cron: "0 */12 * * *"
   workflow_dispatch: {}
 
 jobs:
   validate:
-    if: github.event_name != 'schedule' || github.event.schedule == '*/30 * * * *'
+    if: github.event_name != 'schedule' || github.event.schedule == '0 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -64,13 +67,13 @@ jobs:
         run: python proxyPool.py once
 
   validate-murongpig-shard:
-    if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * *'
+    if: github.event_name != 'schedule' || github.event.schedule == '0 */12 * * *'
     # MuRongPIGFetcher aporta ~100k candidatos - dividido en 40 pedazos de
     # ~2500 c/u para que cada job entre comodo en su timeout (medido en
     # vivo: ~3 candidatos/seg de validacion real, 2500 candidatos ~14 min).
     # Cada pedazo corre en su propio runner de GitHub, con su propia IP
     # efimera - ningun candidato se toca desde una IP fija/rastreable.
-    # Bajado a 1 vez por dia (ver comentario del incidente arriba): es la
+    # Bajado a cada 12h (ver comentario del incidente arriba): es la
     # fuente que mas comandos Redis consume por lejos, 100k candidatos
     # cada vez que corre.
     runs-on: ubuntu-latest
