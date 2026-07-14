@@ -14,6 +14,9 @@ name: Validar pool de proxies (runner efimero)
 #                       el reporte automatico de maliciosos siga funcionando
 #                       tambien desde acá.
 
+permissions:
+  contents: write
+
 on:
   schedule:
     # dos crons distintos, uno por job (Actions no permite cron por job
@@ -66,6 +69,10 @@ jobs:
           PROXY_FETCHER_EXCLUDE: "MuRongPIGFetcher"
         run: python proxyPool.py once
 
+      - name: Guardar pending_sync/ si quedo algo sin sincronizar
+        if: always()
+        run: bash .github/scripts/push_pending_sync.sh
+
   validate-murongpig-shard:
     if: github.event_name != 'schedule' || github.event.schedule == '0 */12 * * *'
     # MuRongPIGFetcher aporta ~100k candidatos - dividido en 40 pedazos de
@@ -101,3 +108,7 @@ jobs:
           SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: 40
         run: python proxyPool.py shard
+
+      - name: Guardar pending_sync/ si quedo algo sin sincronizar
+        if: always()
+        run: bash .github/scripts/push_pending_sync.sh

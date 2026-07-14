@@ -36,6 +36,19 @@ def __runProxyFetch():
     proxy_fetcher = Fetcher()
     candidates = list(proxy_fetcher.run())
 
+    # Si quedaron candidatos guardados de una corrida anterior donde Redis
+    # no respondio (cuota agotada, etc. - ver helper/pendingSync.py y
+    # helper/launcher.py::__captureFallback), se incorporan aca. Llegar
+    # hasta este punto ya significa que Redis esta disponible ahora, asi
+    # que es seguro consumirlos y borrarlos (no se pierden si esta corrida
+    # fallara despues por otro motivo: recien se borran al final).
+    from helper import pendingSync
+    pending = pendingSync.loadAll()
+    if pending:
+        scheduler_log.info("proxy_fetch: %d candidatos recuperados de pending_sync/ (corridas anteriores sin Redis)" % len(pending))
+        from helper.proxy import Proxy
+        candidates.extend(Proxy(p) for p in pending)
+
     # Filtro EN LOTE de "ya lo conocemos" ANTES de validar nada - bug real
     # de produccion: antes este chequeo se hacia por candidato DESPUES de
     # la validacion completa (HTTP real + detector de maliciosos), uno por
@@ -54,6 +67,12 @@ def __runProxyFetch():
     new_candidates = [p for p in candidates if p.proxy not in already_known]
     scheduler_log.info("proxy_fetch: %d candidatos, %d ya conocidos (filtrados en lote), %d nuevos a validar" % (
         len(candidates), len(already_known), len(new_candidates)))
+
+    if pending:
+        # el existsMany de arriba ya probo que Redis responde de verdad -
+        # recien aca es seguro borrar lo guardado, los candidatos ya estan
+        # en new_candidates/already_known, no se pierden.
+        pendingSync.clearAll()
 
     proxy_queue = Queue()
     for proxy in new_candidates:

@@ -33,8 +33,11 @@ def startScheduler():
 
 
 def startOnce():
-    """ Un solo ciclo de fetch+check (para runners efimeros tipo CI) """
-    __beforeStart()
+    """ Un solo ciclo de fetch+check (para runners efimeros tipo CI). Si
+    Redis no esta disponible (ej. cuota de Upstash agotada), no se pierde
+    lo scrapeado esta corrida - ver __captureFallback. """
+    if __beforeStart(fallback=__captureFallback):
+        return
     from helper.scheduler import runOnce
     runOnce()
 
@@ -42,17 +45,39 @@ def startOnce():
 def startShard():
     """ Fetch + check de un pedazo de una fuente (ver PROXY_FETCHER_ONLY +
     SHARD_INDEX/SHARD_COUNT), sin re-validar el pool entero """
-    __beforeStart()
+    if __beforeStart(fallback=__captureFallback):
+        return
     from helper.scheduler import runShard
     runShard()
 
 
-def __beforeStart():
+def __beforeStart(fallback=None):
     __showVersion()
     __showConfigure()
     if __checkDBConfig():
+        if fallback:
+            log.warning("DB no disponible - usando modo de captura sin Redis (pending_sync/)")
+            fallback()
+            return True
         log.info('exit!')
         sys.exit()
+    return False
+
+
+def __captureFallback():
+    """ Red de seguridad para runners efimeros (CI): si Redis no responde
+    (ej. cuota mensual agotada de Upstash), igual se scrapean los
+    candidatos (esto no toca Redis para nada) y se guardan en
+    pending_sync/ en vez de perderse. La proxima corrida que encuentre
+    Redis disponible los recupera solos (ver helper/scheduler.py). """
+    from helper import pendingSync
+    from helper.fetch import Fetcher
+    candidates = [p.proxy for p in Fetcher().run()]
+    path = pendingSync.dump(candidates, note="DB no disponible al arrancar")
+    if path:
+        log.warning("%d candidatos guardados en %s (sin validar, para no perderlos)" % (len(candidates), path))
+    else:
+        log.warning("no se encontraron candidatos para guardar esta corrida")
 
 
 def __showVersion():
