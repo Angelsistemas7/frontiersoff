@@ -8,14 +8,18 @@ name: Validar pool de proxies (runner efimero)
 # nada corriendo entre corridas.
 #
 # Requiere estos secrets en Settings > Secrets and variables > Actions:
-#   DB_CONN            (obligatorio) URI de un Redis gratis externo, ej.
-#                       Upstash: rediss://default:TOKEN@host.upstash.io:PORT/0
-#   ABUSEIPDB_API_KEY   (opcional) misma key que usas localmente, para que
-#                       el reporte automatico de maliciosos siga funcionando
-#                       tambien desde acá.
-
-permissions:
-  contents: write
+#   DB_CONN                    (obligatorio) URI de un Redis gratis externo,
+#                               ej. Upstash: rediss://default:TOKEN@host.upstash.io:PORT/0
+#   ABUSEIPDB_API_KEY          (opcional) misma key que usas localmente, para
+#                               que el reporte automatico de maliciosos siga
+#                               funcionando tambien desde acá.
+#   PENDING_SYNC_DEPLOY_KEY    (obligatorio) llave SSH privada con acceso de
+#                               escritura SOLO al repo privado
+#                               Angelsistemas7/frontiersoff-pending-sync (ver
+#                               helper/pendingSync.py). Los candidatos
+#                               scrapeados nunca se guardan en este repo
+#                               publico - antes se hacia asi y quedaban
+#                               expuestos, se migro al repo privado.
 
 on:
   schedule:
@@ -52,6 +56,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Traer el backlog de pending_sync (repo privado)
+        uses: actions/checkout@v4
+        with:
+          repository: Angelsistemas7/frontiersoff-pending-sync
+          ssh-key: ${{ secrets.PENDING_SYNC_DEPLOY_KEY }}
+          path: pending_sync
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -69,12 +80,12 @@ jobs:
           PROXY_FETCHER_EXCLUDE: "MuRongPIGFetcher"
         run: python proxyPool.py once
 
-      - name: Subir pending_sync/ como artifact (si quedo algo sin sincronizar)
+      - name: Subir candidatos nuevos (si quedo algo sin sincronizar)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pending-sync-main
-          path: pending_sync/
+          path: pending_sync/*.json
           if-no-files-found: ignore
           retention-days: 90
 
@@ -98,6 +109,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Traer el backlog de pending_sync (repo privado)
+        uses: actions/checkout@v4
+        with:
+          repository: Angelsistemas7/frontiersoff-pending-sync
+          ssh-key: ${{ secrets.PENDING_SYNC_DEPLOY_KEY }}
+          path: pending_sync
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -114,31 +132,37 @@ jobs:
           SHARD_COUNT: 40
         run: python proxyPool.py shard
 
-      - name: Subir pending_sync/ como artifact (si quedo algo sin sincronizar)
+      - name: Subir candidatos nuevos (si quedo algo sin sincronizar)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pending-sync-shard-${{ matrix.shard }}
-          path: pending_sync/
+          path: pending_sync/*.json
           if-no-files-found: ignore
           retention-days: 90
 
   sync-pending-to-repo:
-    # Job aparte y UNICO (no matrix) para juntar los pending_sync/ de los
-    # hasta 41 jobs de arriba (1 principal + 40 shards) y commitearlos en
-    # UN solo push. Bug real encontrado en produccion con el diseno
-    # anterior (cada job pusheaba directo con reintento): con 40 jobs
-    # pusheando casi al mismo tiempo, alguno agotaba los reintentos y
-    # perdia sus candidatos igual al terminar el runner - exactamente lo
+    # Job aparte y UNICO (no matrix) para juntar los candidatos nuevos de
+    # los hasta 41 jobs de arriba (1 principal + 40 shards) y commitearlos
+    # en UN solo push AL REPO PRIVADO (nunca al publico - ver nota de
+    # PENDING_SYNC_DEPLOY_KEY arriba). Bug real encontrado en produccion
+    # con el diseno anterior (cada job pusheaba directo con reintento): con
+    # 40 jobs pusheando casi al mismo tiempo, alguno agotaba los reintentos
+    # y perdia sus candidatos igual al terminar el runner - exactamente lo
     # que esto existe para evitar. Con artifacts (que no compiten entre si)
     # + un solo push al final, la contencion desaparece del todo.
     needs: [validate, validate-murongpig-shard]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout del repo privado (donde vive pending_sync)
+        uses: actions/checkout@v4
+        with:
+          repository: Angelsistemas7/frontiersoff-pending-sync
+          ssh-key: ${{ secrets.PENDING_SYNC_DEPLOY_KEY }}
+          path: pending_sync
 
-      - name: Descargar todos los pending_sync de esta corrida
+      - name: Descargar todos los candidatos nuevos de esta corrida
         uses: actions/download-artifact@v4
         with:
           pattern: pending-sync-*
@@ -146,14 +170,14 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
-      - name: Commitear pending_sync (sin contencion posible, un solo job)
+      - name: Commitear al repo privado (sin contencion posible, un solo job)
+        working-directory: pending_sync
         run: |
-          if [ -d incoming_pending_sync ] && [ "$(ls -A incoming_pending_sync 2>/dev/null)" ]; then
-            mkdir -p pending_sync
-            cp incoming_pending_sync/*.json pending_sync/
+          if [ -d ../incoming_pending_sync ] && [ "$(ls -A ../incoming_pending_sync 2>/dev/null)" ]; then
+            cp ../incoming_pending_sync/*.json .
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add pending_sync
+            git add .
             if ! git diff --cached --quiet; then
               git commit -m "pending_sync: sincronizar candidatos de esta corrida [skip ci]"
               git push
@@ -161,5 +185,5 @@ jobs:
               echo "sin cambios nuevos en pending_sync"
             fi
           else
-            echo "esta corrida no genero pending_sync (Redis estuvo disponible)"
+            echo "esta corrida no genero candidatos nuevos (Redis estuvo disponible)"
           fi

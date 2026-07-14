@@ -5,15 +5,26 @@
    Description :   Red de seguridad para cuando Redis (Upstash) no esta
                     disponible (ej. cuota mensual agotada): en vez de perder
                     los candidatos scrapeados esa corrida, se guardan como
-                    archivos JSON en pending_sync/ (el workflow los sube
-                    como artifact y un job aparte los commitea al repo, ver
+                    archivos JSON en pending_sync/. Este modulo solo opera
+                    sobre esa carpeta local - de donde viene/a donde va
+                    pending_sync/ lo decide el workflow, NO este archivo.
+
+                    IMPORTANTE (2026-07-14): pending_sync/ vive en el repo
+                    PRIVADO Angelsistemas7/frontiersoff-pending-sync, no en
+                    este repo publico. Antes se commiteaba aca mismo y
+                    quedaba expuesto (cualquiera podia ver que proxies se
+                    estaban validando) - el workflow ahora clona ese repo
+                    privado justo en pending_sync/ al arrancar (via
+                    PENDING_SYNC_DEPLOY_KEY, con permiso de escritura SOLO
+                    ahi) y un job aparte al final sube lo nuevo (ver
                     .github/workflows/validate.yml::sync-pending-to-repo).
+
                     La proxima corrida donde Redis SI responda los
                     recupera e incorpora automaticamente a la validacion
                     (clearAll() borra la copia LOCAL de ese job efimero).
                     OJO: por diseño (para no arriesgar borrar datos que en
                     realidad no llegaron a Redis) clearAll() no borra los
-                    archivos ya commiteados en el repo remoto - se van a
+                    archivos ya commiteados en el repo privado - se van a
                     seguir viendo ahi (reprocesarlos de nuevo es barato
                     gracias al filtro en lote/dedup, no rompe nada) hasta
                     una limpieza manual una vez confirmado que la cuota de
