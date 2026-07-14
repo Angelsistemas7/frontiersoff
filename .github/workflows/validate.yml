@@ -23,28 +23,19 @@ name: Validar pool de proxies (runner efimero)
 
 on:
   schedule:
-    # dos crons distintos, uno por job (Actions no permite cron por job
+    # Dos crons distintos, uno por job (Actions no permite cron por job
     # directo - se gatea cada job con "if" comparando cual cron disparo).
     #
-    # INCIDENTE 2026-07-13: se encontro el Redis gratis de Upstash con su
-    # cuota de 500.000 requests/mes agotada AL 100% (confirmado en los logs
-    # de varias corridas: "max requests limit exceeded. Limit: 500000,
-    # Usage: 500000"). Se confirmo con timestamps que esto NO lo causo el
-    # cron mas seguido (la cuota ya estaba agotada desde antes de ese
-    # cambio) - el consumo real viene de validar los ~100.000 candidatos de
-    # MuRongPIG (cada uno genera varios comandos Redis: existencia, hset,
-    # etc.), sin importar cada cuanto se dispare. 40 shards x ~2500
-    # candidatos x varios comandos cada uno agota la cuota mensual en pocas
-    # corridas. Se bajan ambos crons a algo mucho mas conservador hasta
-    # confirmar que la cuota se reinicio (revisar el dashboard de Upstash).
+    # Los intervalos son conservadores a proposito: Redis (Upstash free
+    # tier) tiene una cuota de 500.000 requests/mes, y validar los
+    # ~100.000 candidatos de MuRongPIG (varios comandos Redis por
+    # candidato: existencia, hset, etc.) puede agotarla rapido si el cron
+    # es demasiado frecuente. Ajustar con cuidado si se cambian.
     #
-    # cada 1h (antes */30, antes */15): job principal (25 fuentes, excluye
-    # MuRongPIG). Pedido explicito del usuario tras el incidente de cuota.
+    # cada 1h: job principal (25 fuentes, excluye MuRongPIG).
     - cron: "0 * * * *"
-    # cada 12h (antes 1 vez/dia, antes cada 1h, antes cada 3h): job de
-    # murongpig en pedazos - es el que de lejos mas comandos Redis consume
-    # (~100k candidatos por corrida). Pedido explicito del usuario ("cada
-    # 11 horas, puede ser") - se redondeo a 12h por prolijidad del cron.
+    # cada 12h: MuRongPIG en pedazos - es la fuente que mas comandos Redis
+    # consume por lejos (~100k candidatos por corrida).
     - cron: "0 */12 * * *"
   workflow_dispatch: {}
 
