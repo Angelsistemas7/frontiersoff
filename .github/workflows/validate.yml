@@ -69,9 +69,14 @@ jobs:
           PROXY_FETCHER_EXCLUDE: "MuRongPIGFetcher"
         run: python proxyPool.py once
 
-      - name: Guardar pending_sync/ si quedo algo sin sincronizar
+      - name: Subir pending_sync/ como artifact (si quedo algo sin sincronizar)
         if: always()
-        run: bash .github/scripts/push_pending_sync.sh
+        uses: actions/upload-artifact@v4
+        with:
+          name: pending-sync-main
+          path: pending_sync/
+          if-no-files-found: ignore
+          retention-days: 90
 
   validate-murongpig-shard:
     if: github.event_name != 'schedule' || github.event.schedule == '0 */12 * * *'
@@ -109,6 +114,52 @@ jobs:
           SHARD_COUNT: 40
         run: python proxyPool.py shard
 
-      - name: Guardar pending_sync/ si quedo algo sin sincronizar
+      - name: Subir pending_sync/ como artifact (si quedo algo sin sincronizar)
         if: always()
-        run: bash .github/scripts/push_pending_sync.sh
+        uses: actions/upload-artifact@v4
+        with:
+          name: pending-sync-shard-${{ matrix.shard }}
+          path: pending_sync/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  sync-pending-to-repo:
+    # Job aparte y UNICO (no matrix) para juntar los pending_sync/ de los
+    # hasta 41 jobs de arriba (1 principal + 40 shards) y commitearlos en
+    # UN solo push. Bug real encontrado en produccion con el diseno
+    # anterior (cada job pusheaba directo con reintento): con 40 jobs
+    # pusheando casi al mismo tiempo, alguno agotaba los reintentos y
+    # perdia sus candidatos igual al terminar el runner - exactamente lo
+    # que esto existe para evitar. Con artifacts (que no compiten entre si)
+    # + un solo push al final, la contencion desaparece del todo.
+    needs: [validate, validate-murongpig-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar todos los pending_sync de esta corrida
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pending-sync-*
+          path: incoming_pending_sync
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Commitear pending_sync (sin contencion posible, un solo job)
+        run: |
+          if [ -d incoming_pending_sync ] && [ "$(ls -A incoming_pending_sync 2>/dev/null)" ]; then
+            mkdir -p pending_sync
+            cp incoming_pending_sync/*.json pending_sync/
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pending_sync
+            if ! git diff --cached --quiet; then
+              git commit -m "pending_sync: sincronizar candidatos de esta corrida [skip ci]"
+              git push
+            else
+              echo "sin cambios nuevos en pending_sync"
+            fi
+          else
+            echo "esta corrida no genero pending_sync (Redis estuvo disponible)"
+          fi

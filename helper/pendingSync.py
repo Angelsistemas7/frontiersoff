@@ -5,9 +5,19 @@
    Description :   Red de seguridad para cuando Redis (Upstash) no esta
                     disponible (ej. cuota mensual agotada): en vez de perder
                     los candidatos scrapeados esa corrida, se guardan como
-                    archivos JSON en pending_sync/ (el workflow los
-                    commitea al repo). La proxima corrida donde Redis SI
-                    responda los recupera automaticamente y los borra.
+                    archivos JSON en pending_sync/ (el workflow los sube
+                    como artifact y un job aparte los commitea al repo, ver
+                    .github/workflows/validate.yml::sync-pending-to-repo).
+                    La proxima corrida donde Redis SI responda los
+                    recupera e incorpora automaticamente a la validacion
+                    (clearAll() borra la copia LOCAL de ese job efimero).
+                    OJO: por diseño (para no arriesgar borrar datos que en
+                    realidad no llegaron a Redis) clearAll() no borra los
+                    archivos ya commiteados en el repo remoto - se van a
+                    seguir viendo ahi (reprocesarlos de nuevo es barato
+                    gracias al filtro en lote/dedup, no rompe nada) hasta
+                    una limpieza manual una vez confirmado que la cuota de
+                    Upstash reseteo y todo esta sincronizado de verdad.
    Author :        Claude
    date：          2026/07/14
 -------------------------------------------------
